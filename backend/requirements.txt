@@ -1,0 +1,30 @@
+
+# Core Framework
+Flask==3.1.2
+flask-cors==6.0.2
+gunicorn==21.2.0
+PyJWT==2.10.1
+
+# ML & Data Processing
+scikit-learn==1.7.1
+xgboost==3.1.2
+numpy==2.3.2
+pandas==2.3.1
+joblib==1.5.1
+imbalanced-learn==0.14.1
+
+# Explainability
+shap==0.50.0
+
+# Configuration & Utils
+pyyaml==6.0.3
+python-dateutil==2.8.2
+
+# Database
+SQLAlchemy==2.0.36
+psycopg2-binary==2.9.10
+
+# Optional (for production)
+# pydantic==2.5.0
+# structlog==23.2.0
+# pytest==7.4.3

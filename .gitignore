@@ -10,15 +10,30 @@ backend/venv/
 backend/logs/
 backend/config.yaml
 backend/models/
+backend/.env
+backend/.env.*
+*.db
+ids_local.db
 
 # Frontend (Node / Vite)
 frontend/node_modules/
 frontend/dist/
+frontend/dist-ssr/
 frontend/.vite/
 frontend/.eslintcache
+frontend/.env
+frontend/.env.*
+frontend/*.local
+frontend/logs/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+frontend/lerna-debug.log*
 
 # IDE / OS files
-.vscode/
+.vscode/settings.json
+.vscode/*.local.json
 .idea/
 .DS_Store
 Thumbs.db

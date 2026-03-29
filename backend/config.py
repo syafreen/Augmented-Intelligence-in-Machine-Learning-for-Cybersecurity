@@ -1,6 +1,7 @@
 import os
 import sys
 import logging
+import secrets
 
 """
 Configuration module.
@@ -44,23 +45,28 @@ MIN_DETECTIONS = detection_config.get('min_detections', 20)
 MAX_DETECTIONS = detection_config.get('max_detections', 50)
 
 app_config = config.get('app', {})
-API_PORT = app_config.get('port', 8081)
+API_PORT = int(os.getenv("IDS_API_PORT", app_config.get('port', 8081)))
+API_HOST = os.getenv("IDS_API_HOST", app_config.get('host', '127.0.0.1'))
 
-# Database configuration (PostgreSQL via SQLAlchemy)
+_DB_DIR = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_SQLITE = f"sqlite:///{os.path.join(_DB_DIR, 'ids_local.db')}"
+
 database_config = config.get('database', {})
+
 DATABASE_URL = os.getenv(
     "IDS_DATABASE_URL",
     database_config.get(
         'url',
-        "postgresql+psycopg2://ids_user:ids_password@localhost:5432/ids_db"
+        _DEFAULT_SQLITE
     )
 )
 
 auth_config = config.get('auth', {})
-JWT_SECRET_KEY = os.getenv(
-    "IDS_JWT_SECRET_KEY",
-    auth_config.get('secret_key', 'change-this-jwt-secret')
-)
+_env_jwt = os.getenv("IDS_JWT_SECRET_KEY", auth_config.get('secret_key'))
+if not _env_jwt or _env_jwt == 'change-this-jwt-secret':
+    JWT_SECRET_KEY = secrets.token_hex(32)
+else:
+    JWT_SECRET_KEY = _env_jwt
 JWT_EXPIRY_HOURS = auth_config.get('token_expiry_hours', 24)
 
 ADMIN_USERNAME = os.getenv(
@@ -86,7 +92,6 @@ HONEYPOT_THRESHOLDS = honeypot_config.get('threat_thresholds', {})
 security_config = config.get('security', {})
 MAX_LOGIN_ATTEMPTS = security_config.get('max_login_attempts', 5)
 LOCKOUT_DURATION = security_config.get('lockout_duration', 900)
-CAPTCHA_THRESHOLD = security_config.get('captcha_threshold', 3)
 
 
 os.makedirs(LOGS_FOLDER, exist_ok=True)

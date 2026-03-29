@@ -8,7 +8,6 @@ export default function Login() {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const [failureCount, setFailureCount] = useState(0);
-    const [requiresCaptcha, setRequiresCaptcha] = useState(false);
     const [isBlocked, setIsBlocked] = useState(false);
     const [lockoutMessage, setLockoutMessage] = useState('');
     const navigate = useNavigate();
@@ -26,7 +25,6 @@ export default function Login() {
 
             // Update brute force status
             setFailureCount(errorData.failure_count || 0);
-            setRequiresCaptcha(errorData.requires_captcha || false);
             setIsBlocked(errorData.blocked || false);
             setLockoutMessage(errorData.message || '');
 
@@ -68,18 +66,6 @@ export default function Login() {
                             </div>
                             <p className="text-red-300 text-sm">{lockoutMessage}</p>
                             <p className="text-red-300 text-xs mt-2">Please try again in 15 minutes</p>
-                        </div>
-                    )}
-
-                    {/* CAPTCHA Warning */}
-                    {requiresCaptcha && !isBlocked && (
-                        <div className="mb-6 p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-lg">
-                            <div className="flex items-center gap-2 text-yellow-400 text-sm">
-                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                </svg>
-                                <span className="font-semibold">Security Alert: Multiple failed attempts detected</span>
-                            </div>
                         </div>
                     )}
 

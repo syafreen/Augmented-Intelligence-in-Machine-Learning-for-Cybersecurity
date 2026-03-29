@@ -1,6 +1,6 @@
 
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8081/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 export interface IPReputation {
   ip_address: string;
@@ -223,7 +223,7 @@ export async function logout(): Promise<void> {
       headers: getAuthHeaders(),
     });
   } catch (e) {
-    // Ignore errors, just clear local storage
+    console.error("Logout failed or API unavailable:", e);
   }
   removeToken();
 }

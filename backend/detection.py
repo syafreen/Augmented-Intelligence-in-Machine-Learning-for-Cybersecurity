@@ -194,7 +194,7 @@ def generate_real_detection() -> Optional[Dict[str, Any]]:
             
             # Ensure proper length
             if len(class_shap) != len(feature_list):
-                print(f"[WARNING] SHAP values length mismatch: {len(class_shap)} vs {len(feature_list)}")
+                logger.warning(f"SHAP values length mismatch: {len(class_shap)} vs {len(feature_list)}")
                 # Truncate or pad as needed
                 if len(class_shap) > len(feature_list):
                     class_shap = class_shap[:len(feature_list)]
@@ -247,7 +247,7 @@ def generate_real_detection() -> Optional[Dict[str, Any]]:
                 })
                 
         except Exception as e:
-            print(f"[WARNING] SHAP failed: {e}")
+            logger.warning(f"SHAP failed: {e}")
     
     # If no SHAP, provide basic explanation using raw features
     if not explanation:

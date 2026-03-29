@@ -13,12 +13,12 @@ and login attempt tracking.
 
 from config import (
     logger, JWT_SECRET_KEY, JWT_EXPIRY_HOURS,
-    ADMIN_USERNAME, ADMIN_PASSWORD,
-    MAX_LOGIN_ATTEMPTS, LOCKOUT_DURATION, CAPTCHA_THRESHOLD,
+    MAX_LOGIN_ATTEMPTS, LOCKOUT_DURATION,
     HONEYPOT_ENABLED
 )
 from honeypot import check_ip_reputation
-from db import get_session, LoginAttemptModel
+from db import get_session, LoginAttemptModel, UserModel
+from werkzeug.security import check_password_hash
 
 
 auth_bp = Blueprint('auth', __name__)
@@ -84,16 +84,22 @@ def check_brute_force(ip_address: str, username: str) -> Dict[str, Any]:
 
     session = get_session()
     try:
-        recent_failures = (
-            session.query(LoginAttemptModel)
-            .filter(
-                LoginAttemptModel.ip_address == ip_address,
-                LoginAttemptModel.success.is_(False),
-                LoginAttemptModel.timestamp > recent_cutoff,
+        try:
+            recent_failures = (
+                session.query(LoginAttemptModel)
+                .filter(
+                    LoginAttemptModel.ip_address == ip_address,
+                    LoginAttemptModel.success.is_(False),
+                    LoginAttemptModel.timestamp > recent_cutoff,
+                )
+                .all()
             )
-            .all()
-        )
-        failure_count = len(recent_failures)
+            failure_count = len(recent_failures)
+        except Exception as exc:
+            # If the database is unavailable, don't break login flow.
+            # The platform can still operate in a degraded mode for authentication.
+            logger.error(f"Failed to query brute-force attempts: {exc}")
+            failure_count = 0
     finally:
         session.close()
     
@@ -104,9 +110,6 @@ def check_brute_force(ip_address: str, username: str) -> Dict[str, Any]:
     if failure_count >= MAX_LOGIN_ATTEMPTS:
         action = "block"
         message = f"Account locked due to {failure_count} failed attempts"
-    elif failure_count >= CAPTCHA_THRESHOLD:
-        action = "captcha"
-        message = f"CAPTCHA required after {failure_count} failed attempts"
     
     return {
         'failure_count': failure_count,
@@ -176,12 +179,15 @@ def login():
             'error': 'Account temporarily locked',
             'message': brute_force_check['message'],
             'lockout_until': brute_force_check['lockout_until'],
-            'requires_captcha': False,
             'blocked': True
         }), 403
     
-    # Check credentials (single admin user)
-    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+    # Check credentials securely
+    session = get_session()
+    user = session.query(UserModel).filter(UserModel.username == username).first()
+    session.close()
+
+    if user and check_password_hash(user.password_hash, password):
         # Successful login
         log_login_attempt(username, client_ip, True)
         
@@ -209,12 +215,8 @@ def login():
         response_data = {
             'error': 'Invalid credentials',
             'failure_count': brute_force_check['failure_count'] + 1,
-            'requires_captcha': brute_force_check['action'] == 'captcha',
             'blocked': False
         }
-        
-        if brute_force_check['action'] == 'captcha':
-            response_data['message'] = 'CAPTCHA required after multiple failed attempts'
         
         return jsonify(response_data), 401
 
@@ -252,7 +254,11 @@ def get_login_attempts(current_user):
 
     session = get_session()
     try:
-        query = session.query(LoginAttemptModel)
+        try:
+            query = session.query(LoginAttemptModel)
+        except Exception as exc:
+            logger.error(f"Database unavailable for login attempts: {exc}")
+            return jsonify({'error': 'Database unavailable'}), 503
 
         if success_filter is not None:
             success_bool = success_filter.lower() == 'true'

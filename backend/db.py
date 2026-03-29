@@ -13,7 +13,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from config import logger, config
+from config import logger, config, ADMIN_USERNAME, ADMIN_PASSWORD
+from werkzeug.security import generate_password_hash
+import uuid
 
 
 """
@@ -22,19 +24,17 @@ Provides SQLAlchemy engine/session and models for detections, feedback, and logi
 """
 
 
-DATABASE_URL = os.getenv(
-    "IDS_DATABASE_URL",
-    (
-        config.get("database", {}) or {}
-    ).get(
-        "url",
-        # Default local development DSN – override in env or config.yaml for real deployments
-        "postgresql+psycopg2://ids_user:ids_password@localhost:5432/ids_db",
-    ),
-)
+_DB_DIR = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_DB = f"sqlite:///{os.path.join(_DB_DIR, 'ids_local.db')}"
 
+# Environment-driven database connection (Professional pattern instead of hardcoding)
+DATABASE_URL = os.getenv("IDS_DATABASE_URL", _DEFAULT_DB)
 
-engine = create_engine(DATABASE_URL, future=True)
+_engine_kwargs = {"future": True}
+if DATABASE_URL.startswith("sqlite"):
+    _engine_kwargs["connect_args"] = {"check_same_thread": False}
+
+engine = create_engine(DATABASE_URL, **_engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 Base = declarative_base()
@@ -80,11 +80,33 @@ class LoginAttemptModel(Base):
     payload = Column(JSON, nullable=False)
 
 
+class UserModel(Base):
+    __tablename__ = "users"
+    
+    id = Column(String, primary_key=True, index=True)
+    username = Column(String, unique=True, nullable=False, index=True)
+    password_hash = Column(String, nullable=False)
+
+
 def init_db() -> None:
     """Create database tables if they do not exist."""
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables ensured/created successfully.")
+        
+        session = SessionLocal()
+        admin_user = session.query(UserModel).filter(UserModel.username == ADMIN_USERNAME).first()
+        if not admin_user:
+            logger.info("Creating default admin user from config environment variables.")
+            new_user = UserModel(
+                id=str(uuid.uuid4()), 
+                username=ADMIN_USERNAME, 
+                password_hash=generate_password_hash(ADMIN_PASSWORD)
+            )
+            session.add(new_user)
+            session.commit()
+        session.close()
+
     except Exception as exc:
         logger.error(f"Failed to initialize database: {exc}")
 

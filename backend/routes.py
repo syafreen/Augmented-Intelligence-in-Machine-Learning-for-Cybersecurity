@@ -2,6 +2,7 @@ import os
 import json
 from datetime import datetime
 from flask import Blueprint, request, jsonify
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 """
 API routes for the IDS backend.
@@ -26,6 +27,13 @@ from db import get_session, DetectionModel, FeedbackModel, LoginAttemptModel
 
 
 api_bp = Blueprint('api', __name__)
+
+def _db_unavailable_response(exc: Exception):
+    logger.error(f"Database unavailable: {exc}")
+    return jsonify({
+        'error': 'Database unavailable',
+        'message': 'The backend cannot connect to PostgreSQL. Ensure PostgreSQL is running and IDS_DATABASE_URL is correct.'
+    }), 503
 
 
 @api_bp.route('/api/health', methods=['GET'])
@@ -52,7 +60,13 @@ def get_detections():
 
     try:
         # Ensure we have at least MIN_DETECTIONS in the database by generating new ones
-        current_count = session.query(DetectionModel).count()
+        try:
+            current_count = session.query(DetectionModel).count()
+        except OperationalError as exc:
+            return _db_unavailable_response(exc)
+        except SQLAlchemyError as exc:
+            return _db_unavailable_response(exc)
+
         while current_count < MIN_DETECTIONS:
             detection = generate_real_detection()
             if detection:
@@ -68,7 +82,14 @@ def get_detections():
                     payload=detection,
                 )
                 session.add(model)
-                session.commit()
+                try:
+                    session.commit()
+                except OperationalError as exc:
+                    session.rollback()
+                    return _db_unavailable_response(exc)
+                except SQLAlchemyError as exc:
+                    session.rollback()
+                    return _db_unavailable_response(exc)
                 current_count += 1
             else:
                 break
@@ -103,15 +124,25 @@ def get_detections():
         if max_risk_score is not None:
             query = query.filter(DetectionModel.risk_score <= max_risk_score)
 
-        total = query.count()
+        try:
+            total = query.count()
+        except OperationalError as exc:
+            return _db_unavailable_response(exc)
+        except SQLAlchemyError as exc:
+            return _db_unavailable_response(exc)
         total_pages = (total + page_size - 1) // page_size
 
-        detections_models = (
-            query.order_by(DetectionModel.timestamp.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
-            .all()
-        )
+        try:
+            detections_models = (
+                query.order_by(DetectionModel.timestamp.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+                .all()
+            )
+        except OperationalError as exc:
+            return _db_unavailable_response(exc)
+        except SQLAlchemyError as exc:
+            return _db_unavailable_response(exc)
 
         detections = []
         for m in detections_models:
@@ -169,10 +200,22 @@ def generate_detections():
                 session.add(model)
                 new_detections.append(detection)
 
-        session.commit()
+        try:
+            session.commit()
+        except OperationalError as exc:
+            session.rollback()
+            return _db_unavailable_response(exc)
+        except SQLAlchemyError as exc:
+            session.rollback()
+            return _db_unavailable_response(exc)
 
         # Enforce MAX_DETECTIONS cap by removing oldest records
-        total = session.query(DetectionModel).count()
+        try:
+            total = session.query(DetectionModel).count()
+        except OperationalError as exc:
+            return _db_unavailable_response(exc)
+        except SQLAlchemyError as exc:
+            return _db_unavailable_response(exc)
         if total > MAX_DETECTIONS:
             excess = total - MAX_DETECTIONS
             oldest = (
@@ -183,9 +226,21 @@ def generate_detections():
             )
             for record in oldest:
                 session.delete(record)
-            session.commit()
+            try:
+                session.commit()
+            except OperationalError as exc:
+                session.rollback()
+                return _db_unavailable_response(exc)
+            except SQLAlchemyError as exc:
+                session.rollback()
+                return _db_unavailable_response(exc)
 
-        total_after = session.query(DetectionModel).count()
+        try:
+            total_after = session.query(DetectionModel).count()
+        except OperationalError as exc:
+            return _db_unavailable_response(exc)
+        except SQLAlchemyError as exc:
+            return _db_unavailable_response(exc)
 
         return jsonify({
             'generated': len(new_detections),
@@ -201,12 +256,19 @@ def delete_detection(detection_id):
     """Delete a specific detection (analyst feedback)"""
     session = get_session()
     try:
-        deleted = (
-            session.query(DetectionModel)
-            .filter(DetectionModel.id == detection_id)
-            .delete()
-        )
-        session.commit()
+        try:
+            deleted = (
+                session.query(DetectionModel)
+                .filter(DetectionModel.id == detection_id)
+                .delete()
+            )
+            session.commit()
+        except OperationalError as exc:
+            session.rollback()
+            return _db_unavailable_response(exc)
+        except SQLAlchemyError as exc:
+            session.rollback()
+            return _db_unavailable_response(exc)
 
         if deleted:
             return jsonify({'success': True, 'message': 'Detection removed'})
@@ -221,11 +283,16 @@ def get_detection_by_id(detection_id):
     """Get a single detection by ID with full details"""
     session = get_session()
     try:
-        detection_model = (
-            session.query(DetectionModel)
-            .filter(DetectionModel.id == detection_id)
-            .first()
-        )
+        try:
+            detection_model = (
+                session.query(DetectionModel)
+                .filter(DetectionModel.id == detection_id)
+                .first()
+            )
+        except OperationalError as exc:
+            return _db_unavailable_response(exc)
+        except SQLAlchemyError as exc:
+            return _db_unavailable_response(exc)
         if not detection_model:
             return jsonify({'error': 'Detection not found'}), 404
 
@@ -240,12 +307,17 @@ def get_detection_by_id(detection_id):
             'ip_address': detection_model.ip_address,
         }
 
-        feedback_models = (
-            session.query(FeedbackModel)
-            .filter(FeedbackModel.detection_id == detection_id)
-            .order_by(FeedbackModel.timestamp.desc())
-            .all()
-        )
+        try:
+            feedback_models = (
+                session.query(FeedbackModel)
+                .filter(FeedbackModel.detection_id == detection_id)
+                .order_by(FeedbackModel.timestamp.desc())
+                .all()
+            )
+        except OperationalError as exc:
+            return _db_unavailable_response(exc)
+        except SQLAlchemyError as exc:
+            return _db_unavailable_response(exc)
         feedback_history = [
             fb.payload
             if fb.payload
@@ -290,11 +362,16 @@ def submit_feedback():
     session = get_session()
     try:
         # Check if detection exists
-        detection_model = (
-            session.query(DetectionModel)
-            .filter(DetectionModel.id == detection_id)
-            .first()
-        )
+        try:
+            detection_model = (
+                session.query(DetectionModel)
+                .filter(DetectionModel.id == detection_id)
+                .first()
+            )
+        except OperationalError as exc:
+            return _db_unavailable_response(exc)
+        except SQLAlchemyError as exc:
+            return _db_unavailable_response(exc)
         if not detection_model:
             return jsonify({'error': 'Detection not found'}), 404
 
@@ -319,7 +396,14 @@ def submit_feedback():
             payload=feedback_entry,
         )
         session.add(feedback_model)
-        session.commit()
+        try:
+            session.commit()
+        except OperationalError as exc:
+            session.rollback()
+            return _db_unavailable_response(exc)
+        except SQLAlchemyError as exc:
+            session.rollback()
+            return _db_unavailable_response(exc)
 
         return jsonify({
             'success': True,
@@ -335,8 +419,15 @@ def clear_detections():
     """Clear all detections"""
     session = get_session()
     try:
-        deleted = session.query(DetectionModel).delete()
-        session.commit()
+        try:
+            deleted = session.query(DetectionModel).delete()
+            session.commit()
+        except OperationalError as exc:
+            session.rollback()
+            return _db_unavailable_response(exc)
+        except SQLAlchemyError as exc:
+            session.rollback()
+            return _db_unavailable_response(exc)
         logger.info(f"Cleared {deleted} detections from database.")
         return jsonify({'success': True, 'message': 'All detections cleared'})
     finally:
@@ -349,7 +440,12 @@ def get_stats():
     """Get detection statistics"""
     session = get_session()
     try:
-        all_detections = session.query(DetectionModel).all()
+        try:
+            all_detections = session.query(DetectionModel).all()
+        except OperationalError as exc:
+            return _db_unavailable_response(exc)
+        except SQLAlchemyError as exc:
+            return _db_unavailable_response(exc)
         if not all_detections:
             return jsonify({
                 'total_detections': 0,
@@ -432,17 +528,17 @@ def get_honeypot_stats(current_user):
 
         # Calculate IP reputation statistics based ONLY on active detections
         total_checks = len(active_ips)
-    
-    threat_counts = {
-        'critical': 0,
-        'high': 0,
-        'medium': 0,
-        'low': 0,
-        'clean': 0
-    }
-    
-    malicious_ips = []
-    
+        
+        threat_counts = {
+            'critical': 0,
+            'high': 0,
+            'medium': 0,
+            'low': 0,
+            'clean': 0
+        }
+        
+        malicious_ips = []
+        
         # Analyze reputation data for active IPs only
         for ip in active_ips:
             # Get from cache
@@ -450,7 +546,7 @@ def get_honeypot_stats(current_user):
             if reputation_entry:
                 reputation, timestamp = reputation_entry
                 threat_level = reputation.get('threat_level', 'Clean')
-
+                
                 if threat_level == 'Critical':
                     threat_counts['critical'] += 1
                     malicious_ips.append({
@@ -476,10 +572,10 @@ def get_honeypot_stats(current_user):
             else:
                 # If not in cache for some reason (shouldn't happen), count as clean
                 threat_counts['clean'] += 1
-
+        
         # Sort malicious IPs by threat score
         malicious_ips.sort(key=lambda x: x['threat_score'], reverse=True)
-
+        
         # Calculate login statistics from database
         login_query = session.query(LoginAttemptModel)
         total_login_attempts = login_query.count()
@@ -487,7 +583,7 @@ def get_honeypot_stats(current_user):
             login_query.filter(LoginAttemptModel.success.is_(False)).count()
         )
         successful_logins = total_login_attempts - failed_attempts
-
+        
         recent_models = (
             login_query.order_by(LoginAttemptModel.timestamp.desc())
             .limit(10)
@@ -507,7 +603,7 @@ def get_honeypot_stats(current_user):
                         'success': m.success,
                     }
                 )
-
+        
         return jsonify({
             'ip_reputation': {
                 'total_checks': total_checks,

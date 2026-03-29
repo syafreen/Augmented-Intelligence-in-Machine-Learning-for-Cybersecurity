@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import joblib
 
-from config import MODELS_FOLDER, DATA_FOLDER
+from config import MODELS_FOLDER, DATA_FOLDER, logger
 
 
 """
@@ -24,25 +24,25 @@ except ImportError:
 try:
     rf_model = joblib.load(os.path.join(MODELS_FOLDER, 'model_rf_v1.joblib'))
 except Exception as e:
-    print(f"Failed to load RF model: {e}")
+    logger.error(f"Failed to load RF model: {e}")
     rf_model = None
 
 try:
     xgb_model = joblib.load(os.path.join(MODELS_FOLDER, 'model_xgb_v1.joblib'))
 except Exception as e:
-    print(f"Failed to load XGBoost model: {e}")
+    logger.error(f"Failed to load XGBoost model: {e}")
     xgb_model = None
 
 try:
     iso_model = joblib.load(os.path.join(MODELS_FOLDER, 'model_iso_v1.joblib'))
 except Exception as e:
-    print(f"Failed to load Isolation Forest model: {e}")
+    logger.error(f"Failed to load Isolation Forest model: {e}")
     iso_model = None
 
 try:
     scaler = joblib.load(os.path.join(MODELS_FOLDER, 'scaler_v1.joblib'))
 except Exception as e:
-    print(f"Failed to load scaler: {e}")
+    logger.error(f"Failed to load scaler: {e}")
     scaler = None
 
 try:
@@ -96,9 +96,8 @@ try:
             for label in sample_data['Label'].unique():
                 label_samples = sample_data[sample_data['Label'] == label]
                 samples_by_attack[label] = label_samples.reset_index(drop=True)
-            print(f"[OK] Loaded {len(sample_data)} samples across {len(samples_by_attack)} attack types")
-            print(f"    Attack types: {list(samples_by_attack.keys())}")
+            logger.info(f"Loaded {len(sample_data)} samples across {len(samples_by_attack)} attack types")
         else:
-            print(f"[OK] Loaded {len(sample_data)} samples (Label column not found)")
+            logger.info(f"Loaded {len(sample_data)} samples (Label column not found)")
 except Exception as e:
-    print(f"[ERROR] Failed to load data: {e}")
+    logger.error(f"Failed to load data: {e}")

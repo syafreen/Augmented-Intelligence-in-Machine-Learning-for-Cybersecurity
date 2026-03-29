@@ -232,7 +232,7 @@ export default function Dashboard() {
           <p className="text-2xl text-red-400 mb-4">❌ Connection Error</p>
           <p className="text-gray-300 mb-4">{error}</p>
           <p className="text-sm text-gray-400">
-            Make sure the backend is running on http://localhost:8081
+            Make sure the backend service is running and reachable.
           </p>
           <button
             onClick={() => window.location.reload()}
